@@ -29,6 +29,11 @@ class DnsVpnService : VpnService() {
     private val executor = Executors.newSingleThreadExecutor()
     @Volatile private var running = false
 
+    // 같은 (카테고리+앱+대상) 조합은 쿨다운 시간 안에는 알림을 중복으로 띄우지 않음
+    // (A/AAAA 레코드 동시 조회, 재시도 등으로 짧은 시간에 같은 판정이 여러 번 나오는 걸 방지)
+    private val lastAlertTime = mutableMapOf<String, Long>()
+    private val alertCooldownMs = 60 * 1000L // 1분
+
     private lateinit var cellInfoLogger: CellInfoLogger
     private lateinit var riskEvaluator: RiskEvaluator
     private lateinit var directIpMonitor: DirectIpTrafficMonitor
@@ -37,6 +42,15 @@ class DnsVpnService : VpnService() {
         const val CHANNEL_ID = "dns_monitor_channel"
         const val NOTIF_ID = 1
         const val ACTION_STOP = "com.trafficguard.STOP"
+    }
+
+    /** 같은 키(카테고리+앱+대상)로 최근 쿨다운 시간 안에 이미 알림을 보냈는지 확인 */
+    private fun shouldAlert(key: String): Boolean {
+        val now = System.currentTimeMillis()
+        val last = lastAlertTime[key]
+        if (last != null && now - last < alertCooldownMs) return false
+        lastAlertTime[key] = now
+        return true
     }
 
     override fun onCreate() {
@@ -207,24 +221,27 @@ class DnsVpnService : VpnService() {
 
         persistEntry(entry)
 
-        // 로그를 직접 안 보고 있어도 즉시 알림으로 경고
+        // 로그를 직접 안 보고 있어도 즉시 알림으로 경고 (단, 같은 조합은 쿨다운 시간 안에 중복 방지)
         val result = riskEvaluator.evaluate(appPackage ?: "unknown", domain)
         if (result.isSuspicious) {
-            AlertNotifier.notifySuspicious(
-                this,
-                "⚠ 의심스러운 네트워크 활동 감지",
-                result.reason
-            )
-            LogStore.insertRiskAlert(
-                this,
-                RiskAlertEntry(
-                    timestamp = System.currentTimeMillis(),
-                    appPackage = appPackage ?: "unknown",
-                    target = domain,
-                    category = result.category,
-                    reason = result.reason
+            val alertKey = "${result.category}|${appPackage ?: "unknown"}|$domain"
+            if (shouldAlert(alertKey)) {
+                AlertNotifier.notifySuspicious(
+                    this,
+                    "⚠ 의심스러운 네트워크 활동 감지",
+                    result.reason
                 )
-            )
+                LogStore.insertRiskAlert(
+                    this,
+                    RiskAlertEntry(
+                        timestamp = System.currentTimeMillis(),
+                        appPackage = appPackage ?: "unknown",
+                        target = domain,
+                        category = result.category,
+                        reason = result.reason
+                    )
+                )
+            }
         }
     }
 
@@ -277,20 +294,23 @@ class DnsVpnService : VpnService() {
                 }
                 val checkedAt = System.currentTimeMillis()
                 directIpMonitor.checkForDirectIpActivity(intervalStart) { pkg, txDelta, rxDelta ->
-                    val reason = "$pkg 앱이 DNS 조회 기록 없이 데이터를 주고받았습니다 " +
-                        "(송신 ${txDelta / 1024}KB / 수신 ${rxDelta / 1024}KB). " +
-                        "도메인 없이 IP로 직접 통신하는 RAT의 전형적 패턴일 수 있습니다."
-                    AlertNotifier.notifySuspicious(this, "⚠ IP 직통 통신 의심", reason)
-                    LogStore.insertRiskAlert(
-                        this,
-                        RiskAlertEntry(
-                            timestamp = System.currentTimeMillis(),
-                            appPackage = pkg,
-                            target = "(도메인 없음)",
-                            category = "IP직통통신의심",
-                            reason = reason
+                    val alertKey = "IP직통통신의심|$pkg"
+                    if (shouldAlert(alertKey)) {
+                        val reason = "$pkg 앱이 DNS 조회 기록 없이 데이터를 주고받았습니다 " +
+                            "(송신 ${txDelta / 1024}KB / 수신 ${rxDelta / 1024}KB). " +
+                            "도메인 없이 IP로 직접 통신하는 RAT의 전형적 패턴일 수 있습니다."
+                        AlertNotifier.notifySuspicious(this, "⚠ IP 직통 통신 의심", reason)
+                        LogStore.insertRiskAlert(
+                            this,
+                            RiskAlertEntry(
+                                timestamp = System.currentTimeMillis(),
+                                appPackage = pkg,
+                                target = "(도메인 없음)",
+                                category = "IP직통통신의심",
+                                reason = reason
+                            )
                         )
-                    )
+                    }
                 }
                 intervalStart = checkedAt
             }
