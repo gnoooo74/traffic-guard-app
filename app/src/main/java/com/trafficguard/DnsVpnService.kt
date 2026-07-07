@@ -29,6 +29,7 @@ class DnsVpnService : VpnService() {
 
     private lateinit var cellInfoLogger: CellInfoLogger
     private lateinit var riskEvaluator: RiskEvaluator
+    private lateinit var directIpMonitor: DirectIpTrafficMonitor
 
     companion object {
         const val CHANNEL_ID = "dns_monitor_channel"
@@ -39,6 +40,7 @@ class DnsVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         cellInfoLogger = CellInfoLogger(this)
+        directIpMonitor = DirectIpTrafficMonitor(this)
 
         // 위험도 스캔은 서비스 시작 시 한 번만 계산해서 캐시 (실시간 DNS 판단마다 재계산하면 무거움)
         val riskCache = RiskScanner(this).scanAll().associate { it.packageName to it.riskScore }
@@ -106,6 +108,7 @@ class DnsVpnService : VpnService() {
         // input.read()는 패킷이 올 때까지 블로킹되므로,
         // 하트비트는 별도 스레드에서 독립적으로 남긴다 (트래픽이 없어도 생존 확인 가능)
         startHeartbeatThread()
+        startDirectIpMonitorThread()
 
         while (running) {
             val length = try {
@@ -232,6 +235,30 @@ class DnsVpnService : VpnService() {
                 } catch (e: InterruptedException) {
                     break
                 }
+            }
+        }.start()
+    }
+
+    private fun startDirectIpMonitorThread() {
+        Thread {
+            var intervalStart = System.currentTimeMillis()
+            while (running) {
+                try {
+                    Thread.sleep(120_000) // 2분마다 검사
+                } catch (e: InterruptedException) {
+                    break
+                }
+                val checkedAt = System.currentTimeMillis()
+                directIpMonitor.checkForDirectIpActivity(intervalStart) { pkg, txDelta, rxDelta ->
+                    AlertNotifier.notifySuspicious(
+                        this,
+                        "⚠ IP 직통 통신 의심",
+                        "$pkg 앱이 DNS 조회 기록 없이 데이터를 주고받았습니다 " +
+                            "(송신 ${txDelta / 1024}KB / 수신 ${rxDelta / 1024}KB). " +
+                            "도메인 없이 IP로 직접 통신하는 RAT의 전형적 패턴일 수 있습니다."
+                    )
+                }
+                intervalStart = checkedAt
             }
         }.start()
     }
