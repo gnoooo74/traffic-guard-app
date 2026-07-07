@@ -8,9 +8,7 @@ import java.io.File
 import java.io.FileWriter
 
 /**
- * DNS 로그 저장/조회/CSV export.
- * 기존 iplogger가 이미 저장소를 갖고 있다면 이 파일 대신
- * 그 저장소 스키마에 cell_* 컬럼만 추가하는 편이 낫다.
+ * DNS 로그 + 위험 판정 이력 저장/조회/CSV export.
  */
 object LogStore {
 
@@ -39,7 +37,69 @@ object LogStore {
         db.insert("dns_log", null, cv)
     }
 
-    /** 로그가 존재하는 날짜 목록을 최신순으로 반환 (yyyy-MM-dd) */
+    // ---------------- 위험 판정(분석) 이력 ----------------
+
+    fun insertRiskAlert(context: Context, entry: RiskAlertEntry) {
+        val db = getHelper(context).writableDatabase
+        val cv = ContentValues().apply {
+            put("timestamp", entry.timestamp)
+            put("app_package", entry.appPackage)
+            put("target", entry.target)
+            put("category", entry.category)
+            put("reason", entry.reason)
+        }
+        db.insert("risk_alert_log", null, cv)
+    }
+
+    /** 위험 판정 이력이 존재하는 날짜 목록 (최신순) */
+    fun getAlertDates(context: Context): List<String> {
+        val db = getHelper(context).readableDatabase
+        val cursor = db.rawQuery(
+            """
+            SELECT DISTINCT date(timestamp / 1000, 'unixepoch', 'localtime') AS d
+            FROM risk_alert_log
+            ORDER BY d DESC
+            """.trimIndent(),
+            null
+        )
+        val dates = mutableListOf<String>()
+        cursor.use {
+            while (it.moveToNext()) dates.add(it.getString(0))
+        }
+        return dates
+    }
+
+    /** 특정 날짜의 위험 판정 이력을 최신순으로 반환 */
+    fun getAlertsForDate(context: Context, date: String): List<RiskAlertEntry> {
+        val db = getHelper(context).readableDatabase
+        val cursor = db.rawQuery(
+            """
+            SELECT timestamp, app_package, target, category, reason
+            FROM risk_alert_log
+            WHERE date(timestamp / 1000, 'unixepoch', 'localtime') = ?
+            ORDER BY timestamp DESC
+            """.trimIndent(),
+            arrayOf(date)
+        )
+        val list = mutableListOf<RiskAlertEntry>()
+        cursor.use {
+            while (it.moveToNext()) {
+                list.add(
+                    RiskAlertEntry(
+                        timestamp = it.getLong(0),
+                        appPackage = it.getString(1) ?: "unknown",
+                        target = it.getString(2) ?: "",
+                        category = it.getString(3) ?: "",
+                        reason = it.getString(4) ?: ""
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    // ---------------- 기존 DNS 로그 조회 ----------------
+
     /** 특정 시각 이후 DNS 조회 기록이 있었던 패키지명 집합 (SYSTEM_HEARTBEAT는 제외) */
     fun getPackagesWithActivitySince(context: Context, sinceMs: Long): Set<String> {
         val db = getHelper(context).readableDatabase
@@ -126,11 +186,8 @@ object LogStore {
         }
     }
 
-    /** 특정 도메인이 처음 관측된 시각 이후, 동일 앱의 데이터 사용량 급증 여부 등 확장 분석은
-     *  이 테이블을 쿼리해서 TrafficAnomalyMonitor와 조인하는 식으로 확장 가능 */
-
     private class DbHelper(context: Context) :
-        SQLiteOpenHelper(context, "traffic_logger.db", null, 1) {
+        SQLiteOpenHelper(context, "traffic_logger.db", null, 2) {
 
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -151,11 +208,38 @@ object LogStore {
                 )
                 """.trimIndent()
             )
+            createRiskAlertTable(db)
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            db.execSQL("DROP TABLE IF EXISTS dns_log")
-            onCreate(db)
+            // 기존 로그(dns_log)는 절대 지우지 않고, 신규 테이블만 없으면 추가한다.
+            if (oldVersion < 2) {
+                createRiskAlertTable(db)
+            }
+        }
+
+        private fun createRiskAlertTable(db: SQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS risk_alert_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp INTEGER,
+                    app_package TEXT,
+                    target TEXT,
+                    category TEXT,
+                    reason TEXT
+                )
+                """.trimIndent()
+            )
         }
     }
 }
+
+/** 위험으로 판정되어 알림이 발생한 이벤트 하나 */
+data class RiskAlertEntry(
+    val timestamp: Long,
+    val appPackage: String,
+    val target: String,   // 도메인 또는 관련 대상
+    val category: String, // "위험앱_DNS조회" / "타이포스쿼팅" / "IP직통통신의심" 등
+    val reason: String     // 사람이 읽을 상세 설명
+)
