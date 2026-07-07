@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -15,8 +16,7 @@
     <application
         android:label="TrafficGuard"
         android:allowBackup="true"
-        android:icon="@android:drawable/ic_menu_view"
-        xmlns:tools="http://schemas.android.com/tools">
+        android:icon="@android:drawable/ic_menu_view">
 
         <activity
             android:name=".MainActivity"
