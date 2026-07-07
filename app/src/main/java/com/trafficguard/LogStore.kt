@@ -39,6 +39,60 @@ object LogStore {
         db.insert("dns_log", null, cv)
     }
 
+    /** 로그가 존재하는 날짜 목록을 최신순으로 반환 (yyyy-MM-dd) */
+    fun getAvailableDates(context: Context): List<String> {
+        val db = getHelper(context).readableDatabase
+        val cursor = db.rawQuery(
+            """
+            SELECT DISTINCT date(timestamp / 1000, 'unixepoch', 'localtime') AS d
+            FROM dns_log
+            ORDER BY d DESC
+            """.trimIndent(),
+            null
+        )
+        val dates = mutableListOf<String>()
+        cursor.use {
+            while (it.moveToNext()) dates.add(it.getString(0))
+        }
+        return dates
+    }
+
+    /** 특정 날짜(yyyy-MM-dd)의 로그를 최신순으로 반환 */
+    fun getEntriesForDate(context: Context, date: String): List<DnsLogEntry> {
+        val db = getHelper(context).readableDatabase
+        val cursor = db.rawQuery(
+            """
+            SELECT timestamp, app_package, domain, dns_server,
+                   cell_type, mcc, mnc, cell_id, area_code, pci, signal_dbm
+            FROM dns_log
+            WHERE date(timestamp / 1000, 'unixepoch', 'localtime') = ?
+            ORDER BY timestamp DESC
+            """.trimIndent(),
+            arrayOf(date)
+        )
+        val list = mutableListOf<DnsLogEntry>()
+        cursor.use {
+            while (it.moveToNext()) {
+                list.add(
+                    DnsLogEntry(
+                        timestamp = it.getLong(0),
+                        appPackage = it.getString(1) ?: "unknown",
+                        domain = it.getString(2) ?: "",
+                        dnsServer = it.getString(3) ?: "",
+                        cellNetworkType = it.getString(4),
+                        mcc = it.getString(5),
+                        mnc = it.getString(6),
+                        cellId = if (it.isNull(7)) null else it.getLong(7),
+                        areaCode = if (it.isNull(8)) null else it.getInt(8),
+                        pci = if (it.isNull(9)) null else it.getInt(9),
+                        signalDbm = if (it.isNull(10)) null else it.getInt(10)
+                    )
+                )
+            }
+        }
+        return list
+    }
+
     fun exportCsv(context: Context, outFile: File) {
         val db = getHelper(context).readableDatabase
         val cursor = db.rawQuery("SELECT * FROM dns_log ORDER BY timestamp DESC", null)
