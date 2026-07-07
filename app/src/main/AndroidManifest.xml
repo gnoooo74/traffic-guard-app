@@ -16,7 +16,8 @@
     <application
         android:label="TrafficGuard"
         android:allowBackup="true"
-        android:icon="@android:drawable/ic_menu_view">
+        android:icon="@android:drawable/ic_menu_view"
+        android:theme="@style/AppTheme">
 
         <activity
             android:name=".MainActivity"
@@ -27,6 +28,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".LogViewerActivity"
+            android:exported="false"
+            android:label="로그 보기" />
 
         <service
             android:name=".DnsVpnService"
