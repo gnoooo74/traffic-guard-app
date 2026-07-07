@@ -27,8 +27,18 @@ class RiskEvaluator(
 
         // 2) 타이포스쿼팅 기준
         val normalizedDomain = domain.lowercase().removeSuffix(".")
+
+        // 먼저 "정상 도메인 자체이거나 그 하위 도메인(서브도메인)인지" 확인.
+        // 예: m.naver.com, mail.google.com 등은 naver.com/google.com의 정상 서브도메인이므로
+        // SSL 인증서 체인이 뚫리지 않은 이상 신뢰할 수 있음 -> 타이포스쿼팅 검사 자체를 건너뜀
+        val isLegitSubdomain = trustedDomains.any { trusted ->
+            normalizedDomain == trusted || normalizedDomain.endsWith(".$trusted")
+        }
+        if (isLegitSubdomain) {
+            return RiskResult(false, "")
+        }
+
         for (trusted in trustedDomains) {
-            if (normalizedDomain == trusted) continue // 정확히 일치하면 정상
             val distance = levenshtein(normalizedDomain, trusted)
             // 길이 차이가 너무 크면 비교 의미 없음 (완전히 다른 도메인)
             if (distance in 1..2 && kotlin.math.abs(normalizedDomain.length - trusted.length) <= 2) {
