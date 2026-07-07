@@ -14,6 +14,8 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.text.SimpleDateFormat
+import java.util.*
 import java.util.concurrent.Executors
 
 /**
@@ -203,7 +205,7 @@ class DnsVpnService : VpnService() {
             signalDbm = cell?.signalDbm
         )
 
-        LogStore.insert(this, entry)
+        persistEntry(entry)
 
         // 로그를 직접 안 보고 있어도 즉시 알림으로 경고
         val result = riskEvaluator.evaluate(appPackage ?: "unknown", domain)
@@ -216,11 +218,26 @@ class DnsVpnService : VpnService() {
         }
     }
 
+    /** SQLite(LogStore)와 다운로드 폴더의 날짜별 CSV 파일에 동시에 기록 */
+    private fun persistEntry(entry: DnsLogEntry) {
+        LogStore.insert(this, entry)
+
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(entry.timestamp))
+        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(entry.timestamp))
+        val csvLine = listOf(
+            timeStr, entry.appPackage, entry.domain, entry.dnsServer,
+            entry.cellNetworkType ?: "", entry.mcc ?: "", entry.mnc ?: "",
+            entry.cellId?.toString() ?: "", entry.areaCode?.toString() ?: "",
+            entry.pci?.toString() ?: "", entry.signalDbm?.toString() ?: ""
+        ).joinToString(",")
+
+        FileLogWriter.appendLine(this, dateStr, csvLine)
+    }
+
     private fun startHeartbeatThread() {
         Thread {
             while (running) {
-                LogStore.insert(
-                    this,
+                persistEntry(
                     DnsLogEntry(
                         timestamp = System.currentTimeMillis(),
                         appPackage = "SYSTEM_HEARTBEAT",
