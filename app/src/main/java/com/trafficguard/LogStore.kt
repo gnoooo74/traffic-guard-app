@@ -40,6 +40,23 @@ object LogStore {
     }
 
     /** 로그가 존재하는 날짜 목록을 최신순으로 반환 (yyyy-MM-dd) */
+    /** 특정 시각 이후 DNS 조회 기록이 있었던 패키지명 집합 (SYSTEM_HEARTBEAT는 제외) */
+    fun getPackagesWithActivitySince(context: Context, sinceMs: Long): Set<String> {
+        val db = getHelper(context).readableDatabase
+        val cursor = db.rawQuery(
+            """
+            SELECT DISTINCT app_package FROM dns_log
+            WHERE timestamp >= ? AND app_package != 'SYSTEM_HEARTBEAT'
+            """.trimIndent(),
+            arrayOf(sinceMs.toString())
+        )
+        val result = mutableSetOf<String>()
+        cursor.use {
+            while (it.moveToNext()) result.add(it.getString(0))
+        }
+        return result
+    }
+
     fun getAvailableDates(context: Context): List<String> {
         val db = getHelper(context).readableDatabase
         val cursor = db.rawQuery(
