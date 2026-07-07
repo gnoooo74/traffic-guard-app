@@ -42,6 +42,11 @@ class BootReceiver : BroadcastReceiver() {
             // 이 경우는 사용자가 앱을 최초 1회는 직접 열어서 VPN 허용을 해줘야 함
             Log.w(TAG, "VPN 권한 미승인 상태 -> 자동 시작 불가. 앱을 한 번 직접 열어 VPN 허용 필요")
             diag(context, "VPN권한_미승인", "앱을 직접 열어 VPN 허용을 다시 승인해야 함")
+            AlertNotifier.notifyActionRequired(
+                context,
+                "⚠ TrafficGuard 감시 중지됨",
+                "재부팅 후 DNS 감시가 자동으로 시작되지 못했습니다. 탭해서 앱을 열고 VPN 권한을 다시 허용해주세요."
+            )
         }
     }
 
