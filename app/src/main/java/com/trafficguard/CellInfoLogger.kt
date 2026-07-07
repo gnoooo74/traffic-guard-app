@@ -74,7 +74,7 @@ class CellInfoLogger(private val context: Context) {
                     networkType = "LTE",
                     mcc = id.mccString,
                     mnc = id.mncString,
-                    cellId = id.ci.takeIfValid(),
+                    cellId = id.ci.toValidLong(),
                     areaCode = id.tac.takeIfValidInt(),
                     pci = id.pci.takeIfValidInt(),
                     signalDbm = dbm,
@@ -88,7 +88,7 @@ class CellInfoLogger(private val context: Context) {
                     networkType = "WCDMA",
                     mcc = id.mccString,
                     mnc = id.mncString,
-                    cellId = id.cid.takeIfValid(),
+                    cellId = id.cid.toValidLong(),
                     areaCode = id.lac.takeIfValidInt(),
                     pci = id.psc.takeIfValidInt(), // 3G는 PSC가 PCI 역할
                     signalDbm = dbm,
@@ -102,7 +102,7 @@ class CellInfoLogger(private val context: Context) {
                     networkType = "GSM",
                     mcc = id.mccString,
                     mnc = id.mncString,
-                    cellId = id.cid.takeIfValid(),
+                    cellId = id.cid.toValidLong(),
                     areaCode = id.lac.takeIfValidInt(),
                     pci = null, // GSM은 PCI 개념 없음
                     signalDbm = dbm,
@@ -134,4 +134,8 @@ class CellInfoLogger(private val context: Context) {
 
     private fun Int.takeIfValidInt(): Int? =
         if (this == Int.MAX_VALUE || this < 0) null else this
+
+    /** Int로 제공되는 CID/CI(GSM/WCDMA/LTE)를 Long CellSnapshot 필드에 넣기 위한 안전 변환 */
+    private fun Int.toValidLong(): Long? =
+        if (this == Int.MAX_VALUE || this < 0) null else this.toLong()
 }
