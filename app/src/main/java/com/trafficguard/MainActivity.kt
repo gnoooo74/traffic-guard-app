@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
         // 3) DNS 감시 VPN 시작
         startDnsMonitoring()
 
+        // 3-1) 재부팅/서비스 중단에 대비한 워치독 등록 (ip-logger와 동일한 원리)
+        VpnWatchdogWorker.schedule(this)
+
         // 4) 로그 보기 버튼
         findViewById<Button>(R.id.viewLogButton).setOnClickListener {
             startActivity(Intent(this, LogViewerActivity::class.java))
