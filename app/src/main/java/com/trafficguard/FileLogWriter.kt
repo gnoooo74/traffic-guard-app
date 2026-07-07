@@ -18,12 +18,15 @@ object FileLogWriter {
     private const val HEADER =
         "time,app_package,domain,dns_server,cell_type,mcc,mnc,cell_id,area_code,pci,signal_dbm\n"
 
+    private const val ALERT_RELATIVE_PATH = "Download/net_logs/"
+    private const val ALERT_HEADER = "time,app_package,category,target,reason\n"
+
     fun appendLine(context: Context, date: String, csvLine: String) {
         try {
             val resolver = context.contentResolver
             val fileName = "net_log_$date.csv"
 
-            var uri = findExistingUri(context, fileName)
+            var uri = findExistingUri(context, fileName, RELATIVE_PATH)
             var isNewFile = false
 
             if (uri == null) {
@@ -47,12 +50,46 @@ object FileLogWriter {
         }
     }
 
-    private fun findExistingUri(context: Context, fileName: String): Uri? {
+    /**
+     * 위험 판정(경고) 이력을 ip-logger 방식처럼 하루 한 파일에 그대로 누적한다.
+     * (Downloads/net_logs/risk_alert_yyyy-MM-dd.csv)
+     * 기존 DB(risk_alert_log)와 별개로, 앱 없이도 바로 꺼내볼 수 있는 사본을 남기는 목적.
+     */
+    fun appendRiskAlertLine(context: Context, date: String, csvLine: String) {
+        try {
+            val resolver = context.contentResolver
+            val fileName = "risk_alert_$date.csv"
+
+            var uri = findExistingUri(context, fileName, ALERT_RELATIVE_PATH)
+            var isNewFile = false
+
+            if (uri == null) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+                    put(MediaStore.Downloads.RELATIVE_PATH, ALERT_RELATIVE_PATH)
+                }
+                uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                isNewFile = true
+            }
+
+            uri ?: return
+
+            resolver.openOutputStream(uri, "wa")?.use { out ->
+                if (isNewFile) out.write(ALERT_HEADER.toByteArray())
+                out.write((csvLine + "\n").toByteArray())
+            }
+        } catch (e: Exception) {
+            // 조용히 무시 (DB 기록이 핵심, 파일은 보조 사본)
+        }
+    }
+
+    private fun findExistingUri(context: Context, fileName: String, relativePath: String): Uri? {
         val resolver = context.contentResolver
         val projection = arrayOf(MediaStore.Downloads._ID)
         val selection =
             "${MediaStore.Downloads.DISPLAY_NAME}=? AND ${MediaStore.Downloads.RELATIVE_PATH}=?"
-        val args = arrayOf(fileName, RELATIVE_PATH)
+        val args = arrayOf(fileName, relativePath)
 
         resolver.query(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
