@@ -37,10 +37,12 @@ class DirectIpTrafficMonitor(private val context: Context) {
 
         // 이 시간대에 DNS 조회 기록이 있었던 패키지 목록 (LogStore에서 조회)
         val packagesWithDnsActivity = LogStore.getPackagesWithActivitySince(context, intervalStartMs)
+        val selfPackage = context.packageName
 
         for (appInfo in apps) {
             val uid = appInfo.uid
             if (uid < Process.FIRST_APPLICATION_UID) continue // 시스템 UID 제외
+            if (appInfo.packageName == selfPackage) continue // 자기 자신 제외 (VPN 중계 트래픽이 자기 UID로 잡히는 구조상 오탐 발생)
 
             val tx = TrafficStats.getUidTxBytes(uid).takeIf { it >= 0 } ?: continue
             val rx = TrafficStats.getUidRxBytes(uid).takeIf { it >= 0 } ?: continue
