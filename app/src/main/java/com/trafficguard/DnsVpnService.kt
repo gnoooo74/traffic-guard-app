@@ -71,7 +71,11 @@ class DnsVpnService : VpnService() {
         val cm = getSystemService(ConnectivityManager::class.java)
         val activeNetwork = cm.activeNetwork
         val linkProps = activeNetwork?.let { cm.getLinkProperties(it) }
-        val dnsServers = linkProps?.dnsServers ?: listOf(InetAddress.getByName("8.8.8.8"))
+
+        // IPv6 DNS 서버는 addRoute(/32)와 프리픽스 길이가 안 맞아 크래시 나므로 IPv4만 사용
+        val allDns = linkProps?.dnsServers ?: emptyList()
+        val dnsServers = allDns.filterIsInstance<java.net.Inet4Address>()
+            .ifEmpty { listOf(InetAddress.getByName("8.8.8.8")) }
 
         val builder = Builder()
             .setSession("TrafficLoggerDNS")
@@ -93,6 +97,10 @@ class DnsVpnService : VpnService() {
         val input = FileInputStream(vpnInterface!!.fileDescriptor)
         val output = FileOutputStream(vpnInterface!!.fileDescriptor)
         val buffer = ByteArray(32767)
+
+        // input.read()는 패킷이 올 때까지 블로킹되므로,
+        // 하트비트는 별도 스레드에서 독립적으로 남긴다 (트래픽이 없어도 생존 확인 가능)
+        startHeartbeatThread()
 
         while (running) {
             val length = try {
@@ -188,6 +196,29 @@ class DnsVpnService : VpnService() {
         )
 
         LogStore.insert(this, entry)
+    }
+
+    private fun startHeartbeatThread() {
+        Thread {
+            while (running) {
+                LogStore.insert(
+                    this,
+                    DnsLogEntry(
+                        timestamp = System.currentTimeMillis(),
+                        appPackage = "SYSTEM_HEARTBEAT",
+                        domain = "(service alive)",
+                        dnsServer = "-",
+                        cellNetworkType = null, mcc = null, mnc = null,
+                        cellId = null, areaCode = null, pci = null, signalDbm = null
+                    )
+                )
+                try {
+                    Thread.sleep(60_000) // 60초마다 생존 기록
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
+        }.start()
     }
 
     override fun onDestroy() {
