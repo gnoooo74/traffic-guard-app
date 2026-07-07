@@ -81,6 +81,8 @@ class RiskScanner(private val context: Context) {
             reasons.add("민감 권한 보유: ${sensitiveGranted.joinToString(", ")}")
         }
 
+        val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+
         // 평문 HTTP(비암호화) 통신이 허용된 앱인지 확인.
         // Android 9(API 28)부터는 앱이 명시적으로 usesCleartextTraffic=true를 선언하거나
         // 구버전 targetSdk(<28)라 기본 허용 상태가 아니면 평문 통신 자체가 시스템에서 막힘.
@@ -98,7 +100,6 @@ class RiskScanner(private val context: Context) {
         } catch (e: Exception) {
             null
         }
-        val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 
         if (!isSystemApp && installer == null) {
             score += 30
