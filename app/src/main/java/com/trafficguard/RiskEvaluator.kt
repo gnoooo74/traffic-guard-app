@@ -13,7 +13,7 @@ class RiskEvaluator(
     // 목록 자체는 TrustedDomains.kt에서 카테고리별로 관리 (은행/카드/쇼핑/포털/통신/정부/거래소 등)
     private val trustedDomains = TrustedDomains.all
 
-    data class RiskResult(val isSuspicious: Boolean, val reason: String)
+    data class RiskResult(val isSuspicious: Boolean, val reason: String, val category: String = "")
 
     fun evaluate(appPackage: String, domain: String): RiskResult {
         // 1) 위험 앱 기준
@@ -21,7 +21,8 @@ class RiskEvaluator(
         if (appScore >= 50) {
             return RiskResult(
                 true,
-                "위험도 높은 앱($appPackage, 점수 $appScore)이 '$domain'에 접속을 시도했습니다."
+                "위험도 높은 앱($appPackage, 점수 $appScore)이 '$domain'에 접속을 시도했습니다.",
+                "위험앱_DNS조회"
             )
         }
 
@@ -44,7 +45,8 @@ class RiskEvaluator(
             if (distance in 1..2 && kotlin.math.abs(normalizedDomain.length - trusted.length) <= 2) {
                 return RiskResult(
                     true,
-                    "'$domain'이(가) 정상 도메인 '$trusted'와(과) 철자가 유사합니다 (가짜 사이트 의심)."
+                    "'$domain'이(가) 정상 도메인 '$trusted'와(과) 철자가 유사합니다 (가짜 사이트 의심).",
+                    "타이포스쿼팅"
                 )
             }
         }
