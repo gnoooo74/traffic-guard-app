@@ -215,6 +215,16 @@ class DnsVpnService : VpnService() {
                 "⚠ 의심스러운 네트워크 활동 감지",
                 result.reason
             )
+            LogStore.insertRiskAlert(
+                this,
+                RiskAlertEntry(
+                    timestamp = System.currentTimeMillis(),
+                    appPackage = appPackage ?: "unknown",
+                    target = domain,
+                    category = result.category,
+                    reason = result.reason
+                )
+            )
         }
     }
 
@@ -267,12 +277,19 @@ class DnsVpnService : VpnService() {
                 }
                 val checkedAt = System.currentTimeMillis()
                 directIpMonitor.checkForDirectIpActivity(intervalStart) { pkg, txDelta, rxDelta ->
-                    AlertNotifier.notifySuspicious(
+                    val reason = "$pkg 앱이 DNS 조회 기록 없이 데이터를 주고받았습니다 " +
+                        "(송신 ${txDelta / 1024}KB / 수신 ${rxDelta / 1024}KB). " +
+                        "도메인 없이 IP로 직접 통신하는 RAT의 전형적 패턴일 수 있습니다."
+                    AlertNotifier.notifySuspicious(this, "⚠ IP 직통 통신 의심", reason)
+                    LogStore.insertRiskAlert(
                         this,
-                        "⚠ IP 직통 통신 의심",
-                        "$pkg 앱이 DNS 조회 기록 없이 데이터를 주고받았습니다 " +
-                            "(송신 ${txDelta / 1024}KB / 수신 ${rxDelta / 1024}KB). " +
-                            "도메인 없이 IP로 직접 통신하는 RAT의 전형적 패턴일 수 있습니다."
+                        RiskAlertEntry(
+                            timestamp = System.currentTimeMillis(),
+                            appPackage = pkg,
+                            target = "(도메인 없음)",
+                            category = "IP직통통신의심",
+                            reason = reason
+                        )
                     )
                 }
                 intervalStart = checkedAt
