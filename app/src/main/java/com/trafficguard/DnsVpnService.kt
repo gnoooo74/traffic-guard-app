@@ -42,6 +42,10 @@ class DnsVpnService : VpnService() {
         const val CHANNEL_ID = "dns_monitor_channel"
         const val NOTIF_ID = 1
         const val ACTION_STOP = "com.trafficguard.STOP"
+
+        // 워치독(WorkManager)이 서비스 생사를 판단하는 용도. 프로세스가 죽으면
+        // 자동으로 false가 되므로(정적 필드가 초기화됨), 별도 리셋 로직 불필요.
+        @Volatile var isRunning: Boolean = false
     }
 
     /** 같은 키(카테고리+앱+대상)로 최근 쿨다운 시간 안에 이미 알림을 보냈는지 확인 */
@@ -70,6 +74,7 @@ class DnsVpnService : VpnService() {
         }
         startForeground(NOTIF_ID, buildNotification())
         startVpn()
+        isRunning = true
         return START_STICKY
     }
 
@@ -231,16 +236,15 @@ class DnsVpnService : VpnService() {
                     "⚠ 의심스러운 네트워크 활동 감지",
                     result.reason
                 )
-                LogStore.insertRiskAlert(
-                    this,
-                    RiskAlertEntry(
-                        timestamp = System.currentTimeMillis(),
-                        appPackage = appPackage ?: "unknown",
-                        target = domain,
-                        category = result.category,
-                        reason = result.reason
-                    )
+                val alertEntry = RiskAlertEntry(
+                    timestamp = System.currentTimeMillis(),
+                    appPackage = appPackage ?: "unknown",
+                    target = domain,
+                    category = result.category,
+                    reason = result.reason
                 )
+                LogStore.insertRiskAlert(this, alertEntry)
+                persistRiskAlertToFile(alertEntry)
             }
         }
     }
@@ -259,6 +263,20 @@ class DnsVpnService : VpnService() {
         ).joinToString(",")
 
         FileLogWriter.appendLine(this, dateStr, csvLine)
+    }
+
+    /**
+     * 위험 판정(DNS 위험탐지 + IP직통통신의심 공통)을 ip-logger 방식처럼
+     * 하루 한 파일(risk_alert_yyyy-MM-dd.csv)에 그대로 누적한다.
+     */
+    private fun persistRiskAlertToFile(entry: RiskAlertEntry) {
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(entry.timestamp))
+        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(entry.timestamp))
+        val csvLine = listOf(
+            timeStr, entry.appPackage, entry.category, entry.target, entry.reason
+        ).joinToString(",") { it.replace(",", " ") }
+
+        FileLogWriter.appendRiskAlertLine(this, dateStr, csvLine)
     }
 
     private fun startHeartbeatThread() {
@@ -300,16 +318,15 @@ class DnsVpnService : VpnService() {
                             "(송신 ${txDelta / 1024}KB / 수신 ${rxDelta / 1024}KB). " +
                             "도메인 없이 IP로 직접 통신하는 RAT의 전형적 패턴일 수 있습니다."
                         AlertNotifier.notifySuspicious(this, "⚠ IP 직통 통신 의심", reason)
-                        LogStore.insertRiskAlert(
-                            this,
-                            RiskAlertEntry(
-                                timestamp = System.currentTimeMillis(),
-                                appPackage = pkg,
-                                target = "(도메인 없음)",
-                                category = "IP직통통신의심",
-                                reason = reason
-                            )
+                        val alertEntry = RiskAlertEntry(
+                            timestamp = System.currentTimeMillis(),
+                            appPackage = pkg,
+                            target = "(도메인 없음)",
+                            category = "IP직통통신의심",
+                            reason = reason
                         )
+                        LogStore.insertRiskAlert(this, alertEntry)
+                        persistRiskAlertToFile(alertEntry)
                     }
                 }
                 intervalStart = checkedAt
@@ -319,12 +336,14 @@ class DnsVpnService : VpnService() {
 
     override fun onDestroy() {
         running = false
+        isRunning = false
         vpnInterface?.close()
         super.onDestroy()
     }
 
     override fun onRevoke() {
         running = false
+        isRunning = false
         vpnInterface?.close()
         super.onRevoke()
     }
