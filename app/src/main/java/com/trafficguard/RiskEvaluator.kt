@@ -10,12 +10,8 @@ class RiskEvaluator(
 ) {
 
     // 자주 표적이 되는 브랜드/은행/쇼핑몰 도메인 (타이포스쿼팅 비교 기준)
-    private val trustedDomains = listOf(
-        "coupang.com", "naver.com", "kakao.com", "google.com",
-        "toss.im", "kbstar.com", "shinhan.com", "wooribank.com",
-        "hanabank.com", "nonghyup.com", "gmarket.co.kr", "11st.co.kr",
-        "ssg.com", "auction.co.kr", "interpark.com"
-    )
+    // 목록 자체는 TrustedDomains.kt에서 카테고리별로 관리 (은행/카드/쇼핑/포털/통신/정부/거래소 등)
+    private val trustedDomains = TrustedDomains.all
 
     data class RiskResult(val isSuspicious: Boolean, val reason: String)
 
