@@ -81,6 +81,17 @@ class RiskScanner(private val context: Context) {
             reasons.add("민감 권한 보유: ${sensitiveGranted.joinToString(", ")}")
         }
 
+        // 평문 HTTP(비암호화) 통신이 허용된 앱인지 확인.
+        // Android 9(API 28)부터는 앱이 명시적으로 usesCleartextTraffic=true를 선언하거나
+        // 구버전 targetSdk(<28)라 기본 허용 상태가 아니면 평문 통신 자체가 시스템에서 막힘.
+        // 즉 이 플래그가 true라는 건 "이 앱은 암호화 안 된 통신이 가능하다"는 정적 신호.
+        @Suppress("DEPRECATION")
+        val allowsCleartext = (appInfo.flags and ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC) != 0
+        if (allowsCleartext && !isSystemApp) {
+            score += 10
+            reasons.add("평문(HTTP) 통신 허용됨 — 대부분의 정상 서비스는 HTTPS만 사용하므로 잠재적 위험 신호")
+        }
+
         // 설치 출처 확인 (사이드로딩 여부)
         val installer = try {
             pm.getInstallSourceInfo(appInfo.packageName).installingPackageName
