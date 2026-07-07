@@ -23,10 +23,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 1) 위치 권한 요청 (셀 정보 조회 필수)
+        // 1) 위치 권한 + 알림 권한 요청 (셀 정보 조회, 위험 알림 표시에 필수)
         ActivityCompat.requestPermissions(
             this,
-            arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
+            arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ),
             1001
         )
 
