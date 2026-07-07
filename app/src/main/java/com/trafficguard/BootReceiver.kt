@@ -18,6 +18,9 @@ class BootReceiver : BroadcastReceiver() {
 
         if (!relevantAction) return
 
+        // WorkManager 워치독도 함께 재등록 (KEEP 정책이라 이미 있으면 중복 안 됨)
+        VpnWatchdogWorker.schedule(context)
+
         // VpnService는 부팅 시점에 사용자 동의(prepare) 없이도,
         // 이미 한 번 허용된 적 있으면 자동으로 시작 가능
         val prepareIntent = VpnService.prepare(context)
