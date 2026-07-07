@@ -28,16 +28,21 @@ class DnsVpnService : VpnService() {
     @Volatile private var running = false
 
     private lateinit var cellInfoLogger: CellInfoLogger
+    private lateinit var riskEvaluator: RiskEvaluator
 
     companion object {
         const val CHANNEL_ID = "dns_monitor_channel"
         const val NOTIF_ID = 1
-        const val ACTION_STOP = "com.example.trafficlogger.STOP"
+        const val ACTION_STOP = "com.trafficguard.STOP"
     }
 
     override fun onCreate() {
         super.onCreate()
         cellInfoLogger = CellInfoLogger(this)
+
+        // 위험도 스캔은 서비스 시작 시 한 번만 계산해서 캐시 (실시간 DNS 판단마다 재계산하면 무거움)
+        val riskCache = RiskScanner(this).scanAll().associate { it.packageName to it.riskScore }
+        riskEvaluator = RiskEvaluator(riskCache)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -196,6 +201,16 @@ class DnsVpnService : VpnService() {
         )
 
         LogStore.insert(this, entry)
+
+        // 로그를 직접 안 보고 있어도 즉시 알림으로 경고
+        val result = riskEvaluator.evaluate(appPackage ?: "unknown", domain)
+        if (result.isSuspicious) {
+            AlertNotifier.notifySuspicious(
+                this,
+                "⚠ 의심스러운 네트워크 활동 감지",
+                result.reason
+            )
+        }
     }
 
     private fun startHeartbeatThread() {
