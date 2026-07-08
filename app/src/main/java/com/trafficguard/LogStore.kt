@@ -35,6 +35,7 @@ object LogStore {
             put("signal_dbm", entry.signalDbm)
             put("importance_label", entry.importanceLabel)
             put("foreground_app", entry.foregroundApp)
+            put("cell_is_stale", if (entry.cellIsStale) 1 else 0)
         }
         db.insert("dns_log", null, cv)
     }
@@ -143,7 +144,7 @@ object LogStore {
             """
             SELECT timestamp, app_package, domain, dns_server,
                    cell_type, mcc, mnc, cell_id, area_code, pci, signal_dbm,
-                   importance_label, foreground_app
+                   importance_label, foreground_app, cell_is_stale
             FROM dns_log
             WHERE date(timestamp / 1000, 'unixepoch', 'localtime') = ?
             ORDER BY timestamp DESC
@@ -167,7 +168,8 @@ object LogStore {
                         pci = if (it.isNull(9)) null else it.getInt(9),
                         signalDbm = if (it.isNull(10)) null else it.getInt(10),
                         importanceLabel = it.getString(11),
-                        foregroundApp = it.getString(12)
+                        foregroundApp = it.getString(12),
+                        cellIsStale = (!it.isNull(13) && it.getInt(13) == 1)
                     )
                 )
             }
@@ -179,7 +181,7 @@ object LogStore {
         val db = getHelper(context).readableDatabase
         val cursor = db.rawQuery("SELECT * FROM dns_log ORDER BY timestamp DESC", null)
         FileWriter(outFile).use { writer ->
-            writer.append("id,timestamp,app_package,domain,dns_server,cell_type,mcc,mnc,cell_id,area_code,pci,signal_dbm,importance_label,foreground_app\n")
+            writer.append("id,timestamp,app_package,domain,dns_server,cell_type,mcc,mnc,cell_id,area_code,pci,signal_dbm,importance_label,foreground_app,cell_is_stale\n")
             cursor.use {
                 while (it.moveToNext()) {
                     val row = (0 until it.columnCount).joinToString(",") { idx ->
@@ -192,7 +194,7 @@ object LogStore {
     }
 
     private class DbHelper(context: Context) :
-        SQLiteOpenHelper(context, "traffic_logger.db", null, 3) {
+        SQLiteOpenHelper(context, "traffic_logger.db", null, 4) {
 
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -211,7 +213,8 @@ object LogStore {
                     pci INTEGER,
                     signal_dbm INTEGER,
                     importance_label TEXT,
-                    foreground_app TEXT
+                    foreground_app TEXT,
+                    cell_is_stale INTEGER
                 )
                 """.trimIndent()
             )
@@ -227,6 +230,9 @@ object LogStore {
                 // 기존 dns_log 테이블에 새 컬럼 2개만 추가 (기존 데이터 유지)
                 db.execSQL("ALTER TABLE dns_log ADD COLUMN importance_label TEXT")
                 db.execSQL("ALTER TABLE dns_log ADD COLUMN foreground_app TEXT")
+            }
+            if (oldVersion < 4) {
+                db.execSQL("ALTER TABLE dns_log ADD COLUMN cell_is_stale INTEGER")
             }
         }
 
