@@ -119,7 +119,9 @@ class LogViewerActivity : AppCompatActivity() {
             } else {
                 val cellInfo = if (e.cellId != null) {
                     "  |  ${e.cellNetworkType ?: "-"} CellID:${e.cellId} LAC/TAC:${e.areaCode ?: "-"} PCI:${e.pci ?: "-"}"
-                } else ""
+                } else {
+                    "  |  (셀 정보 획득 실패)"
+                }
 
                 // 네트워크를 쓴 앱의 상태 태그 (FOREGROUND / BACKGROUND_... / UNKNOWN(원인))
                 val stateTag = e.importanceLabel?.let { " [$it]" } ?: ""
