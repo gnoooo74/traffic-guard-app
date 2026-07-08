@@ -98,12 +98,23 @@ object AppStateResolver {
      * 권한이 없거나 못 찾으면 null.
      */
     fun resolveForegroundAppLabel(context: Context, nowMs: Long): String? {
+        val pkg = resolveForegroundPackage(context, nowMs) ?: return null
+        return toAppLabel(context, pkg)
+    }
+
+    /**
+     * nowMs 시점에 화면 맨 앞에 있던 앱의 "패키지명"을 반환한다.
+     * 통신 앱 패키지명과 정확히 비교하기 위해 이름(label) 대신 패키지명을 쓴다.
+     * 권한이 없거나 못 찾으면 null.
+     */
+    fun resolveForegroundPackage(context: Context, nowMs: Long): String? {
         if (!hasUsageAccess(context)) return null
 
         return try {
             val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            // 최근 10초 구간의 이벤트를 훑어, 가장 마지막으로 화면에 올라온(MOVE_TO_FOREGROUND) 앱을 찾는다
-            val events = usm.queryEvents(nowMs - 10_000, nowMs)
+            // 최근 30초 구간의 이벤트를 훑어, 가장 마지막으로 화면에 올라온 앱을 찾는다.
+            // (10초는 이벤트가 하나도 안 잡히는 경우가 잦아 30초로 넉넉히 잡음)
+            val events = usm.queryEvents(nowMs - 30_000, nowMs)
             val event = android.app.usage.UsageEvents.Event()
             var lastForegroundPkg: String? = null
 
@@ -114,13 +125,67 @@ object AppStateResolver {
                 }
             }
 
-            lastForegroundPkg?.let { toAppLabel(context, it) }
+            lastForegroundPkg
         } catch (e: Exception) {
             null
         }
     }
 
-    /** 패키지명 -> 사람이 읽을 수 있는 앱 이름. 못 구하면 패키지명 그대로 반환. */
+    /**
+     * 상태 판정 + 화면 앱 라벨을 한 번의 UsageStats 조회로 함께 구한다.
+     * (DNS 조회마다 UsageStats를 두 번 쿼리하지 않도록 통합)
+     *
+     * @return Pair(상태라벨, 화면앱라벨)
+     */
+    fun resolveStateAndForeground(
+        context: Context,
+        uid: Int,
+        commPackage: String?,
+        nowMs: Long
+    ): Pair<String, String?> {
+        val foregroundPkg = resolveForegroundPackage(context, nowMs)
+        val foregroundLabel = foregroundPkg?.let { toAppLabel(context, it) }
+
+        val state = when {
+            commPackage == null -> "UNKNOWN(NO_PACKAGE)"
+            foregroundPkg != null && foregroundPkg == commPackage -> "FOREGROUND"
+            foregroundPkg != null -> "BACKGROUND"
+            // 화면 앱을 못 구함(권한 없음 등) -> importance 보조 판정
+            else -> resolveImportanceLabel(context, uid, commPackage)
+        }
+
+        return Pair(state, foregroundLabel)
+    }
+
+    /**
+     * 최종 상태 판정. 통신 앱(commPackage)이 그 순간 포어그라운드였는지 백그라운드였는지 결정한다.
+     *
+     * 판정 우선순위:
+     *  1) UsageStats로 얻은 "화면 앱"과 통신 앱을 비교 (가장 신뢰도 높음)
+     *     - 같으면 FOREGROUND, 다르면 BACKGROUND
+     *  2) 화면 앱을 못 구하면(권한 없음 등) importance 기반 보조 판정으로 폴백
+     *
+     * getRunningAppProcesses()의 importance는 다른 앱에 대해 대부분
+     * PROCESS_NOT_FOUND를 반환하므로 주 기준으로 쓰지 않고 폴백으로만 쓴다.
+     */
+    fun resolveState(context: Context, uid: Int, commPackage: String?, nowMs: Long): String {
+        if (commPackage == null) return "UNKNOWN(NO_PACKAGE)"
+
+        val foregroundPkg = resolveForegroundPackage(context, nowMs)
+
+        if (foregroundPkg != null) {
+            // 화면 앱을 알아냈다 -> 통신 앱과 비교하는 게 가장 정확
+            return if (foregroundPkg == commPackage) {
+                "FOREGROUND"
+            } else {
+                "BACKGROUND"
+            }
+        }
+
+        // 화면 앱을 못 구한 경우(사용 정보 접근 권한 없음 등) -> importance 보조 판정
+        return resolveImportanceLabel(context, uid, commPackage)
+    }
+
     fun toAppLabel(context: Context, packageName: String): String {
         return try {
             val pm = context.packageManager
