@@ -33,6 +33,8 @@ object LogStore {
             put("area_code", entry.areaCode)
             put("pci", entry.pci)
             put("signal_dbm", entry.signalDbm)
+            put("importance_label", entry.importanceLabel)
+            put("foreground_app", entry.foregroundApp)
         }
         db.insert("dns_log", null, cv)
     }
@@ -140,7 +142,8 @@ object LogStore {
         val cursor = db.rawQuery(
             """
             SELECT timestamp, app_package, domain, dns_server,
-                   cell_type, mcc, mnc, cell_id, area_code, pci, signal_dbm
+                   cell_type, mcc, mnc, cell_id, area_code, pci, signal_dbm,
+                   importance_label, foreground_app
             FROM dns_log
             WHERE date(timestamp / 1000, 'unixepoch', 'localtime') = ?
             ORDER BY timestamp DESC
@@ -162,7 +165,9 @@ object LogStore {
                         cellId = if (it.isNull(7)) null else it.getLong(7),
                         areaCode = if (it.isNull(8)) null else it.getInt(8),
                         pci = if (it.isNull(9)) null else it.getInt(9),
-                        signalDbm = if (it.isNull(10)) null else it.getInt(10)
+                        signalDbm = if (it.isNull(10)) null else it.getInt(10),
+                        importanceLabel = it.getString(11),
+                        foregroundApp = it.getString(12)
                     )
                 )
             }
@@ -174,7 +179,7 @@ object LogStore {
         val db = getHelper(context).readableDatabase
         val cursor = db.rawQuery("SELECT * FROM dns_log ORDER BY timestamp DESC", null)
         FileWriter(outFile).use { writer ->
-            writer.append("timestamp,app_package,domain,dns_server,cell_type,mcc,mnc,cell_id,area_code,pci,signal_dbm\n")
+            writer.append("id,timestamp,app_package,domain,dns_server,cell_type,mcc,mnc,cell_id,area_code,pci,signal_dbm,importance_label,foreground_app\n")
             cursor.use {
                 while (it.moveToNext()) {
                     val row = (0 until it.columnCount).joinToString(",") { idx ->
@@ -187,7 +192,7 @@ object LogStore {
     }
 
     private class DbHelper(context: Context) :
-        SQLiteOpenHelper(context, "traffic_logger.db", null, 2) {
+        SQLiteOpenHelper(context, "traffic_logger.db", null, 3) {
 
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -204,7 +209,9 @@ object LogStore {
                     cell_id INTEGER,
                     area_code INTEGER,
                     pci INTEGER,
-                    signal_dbm INTEGER
+                    signal_dbm INTEGER,
+                    importance_label TEXT,
+                    foreground_app TEXT
                 )
                 """.trimIndent()
             )
@@ -212,9 +219,14 @@ object LogStore {
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            // 기존 로그(dns_log)는 절대 지우지 않고, 신규 테이블만 없으면 추가한다.
+            // 기존 로그(dns_log)는 절대 지우지 않고, 부족한 것만 덧붙인다.
             if (oldVersion < 2) {
                 createRiskAlertTable(db)
+            }
+            if (oldVersion < 3) {
+                // 기존 dns_log 테이블에 새 컬럼 2개만 추가 (기존 데이터 유지)
+                db.execSQL("ALTER TABLE dns_log ADD COLUMN importance_label TEXT")
+                db.execSQL("ALTER TABLE dns_log ADD COLUMN foreground_app TEXT")
             }
         }
 
