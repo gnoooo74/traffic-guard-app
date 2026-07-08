@@ -5,6 +5,7 @@ import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.PowerManager
 import android.os.Process
 
 /**
@@ -137,6 +138,20 @@ object AppStateResolver {
      *
      * @return Pair(상태라벨, 화면앱라벨)
      */
+    /**
+     * 기기가 인터랙티브 상태인지(≈ 화면이 켜져 사용자가 볼 수 있는 상태인지) 확인.
+     * false면 화면이 꺼져 있거나 잠들어 있는 상태로, 이때 발생한 통신은 논리적으로 백그라운드다.
+     */
+    fun isScreenInteractive(context: Context): Boolean {
+        return try {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.isInteractive
+        } catch (e: Exception) {
+            // 확인 실패 시엔 "켜져 있다"고 보수적으로 가정 (화면꺼짐으로 오단정하지 않기 위해)
+            true
+        }
+    }
+
     fun resolveStateAndForeground(
         context: Context,
         uid: Int,
@@ -148,11 +163,12 @@ object AppStateResolver {
 
         val state = when {
             commPackage == null -> "UNKNOWN(통신앱 확인불가)"
+            // 1순위: 화면이 꺼져 있으면 정의상 포어그라운드 앱이 없으므로 무조건 백그라운드 (추측 없음, 가장 확실)
+            !isScreenInteractive(context) -> "BACKGROUND(화면꺼짐)"
+            // 2순위: 화면 앱과 통신 앱 비교
             foregroundPkg != null && foregroundPkg == commPackage -> "FOREGROUND"
             foregroundPkg != null -> "BACKGROUND"
-            // 화면 앱을 못 구함 -> 억지로 추측하지 않는다.
-            // importance 폴백에서 유효한 값(FG_SERVICE 등)이 나오면 살리고,
-            // 그마저 안 되면 "화면앱 확인불가"로 정직하게 둔다.
+            // 화면은 켜져 있는데 화면 앱을 못 구함 -> 억지로 추측하지 않고 정직하게 표기
             else -> importanceOrHonestUnknown(context, uid, commPackage)
         }
 
