@@ -230,7 +230,8 @@ class DnsVpnService : VpnService() {
             pci = cell?.pci,
             signalDbm = cell?.signalDbm,
             importanceLabel = importanceLabel,
-            foregroundApp = foregroundApp
+            foregroundApp = foregroundApp,
+            cellIsStale = cell?.isStale ?: false
         )
 
         persistEntry(entry)
@@ -269,7 +270,8 @@ class DnsVpnService : VpnService() {
             entry.cellNetworkType ?: "", entry.mcc ?: "", entry.mnc ?: "",
             entry.cellId?.toString() ?: "", entry.areaCode?.toString() ?: "",
             entry.pci?.toString() ?: "", entry.signalDbm?.toString() ?: "",
-            entry.importanceLabel ?: "", entry.foregroundApp ?: ""
+            entry.importanceLabel ?: "", entry.foregroundApp ?: "",
+            if (entry.cellIsStale) "stale" else ""
         ).joinToString(",") { it.replace(",", " ") }
 
         FileLogWriter.appendLine(this, dateStr, csvLine)
@@ -372,5 +374,6 @@ data class DnsLogEntry(
     val pci: Int?,
     val signalDbm: Int?,
     val importanceLabel: String? = null, // 네트워크를 쓴 앱의 상태 (FOREGROUND/BACKGROUND_...)
-    val foregroundApp: String? = null    // 그 순간 화면에 떠 있던 앱 이름 (UsageStats 기준)
+    val foregroundApp: String? = null,   // 그 순간 화면에 떠 있던 앱 이름 (UsageStats 기준)
+    val cellIsStale: Boolean = false     // true면 셀 정보가 폴백(직전 셀 정보)임
 )
