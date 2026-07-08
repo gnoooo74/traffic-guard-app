@@ -16,7 +16,7 @@ import android.provider.MediaStore
 object FileLogWriter {
     private const val RELATIVE_PATH = "Download/net_logs/"
     private const val HEADER =
-        "time,app_package,domain,dns_server,cell_type,mcc,mnc,cell_id,area_code,pci,signal_dbm\n"
+        "time,app_package,domain,dns_server,cell_type,mcc,mnc,cell_id,area_code,pci,signal_dbm,importance,foreground_app\n"
 
     private const val ALERT_RELATIVE_PATH = "Download/net_logs/"
     private const val ALERT_HEADER = "time,app_package,category,target,reason\n"
