@@ -118,7 +118,8 @@ class LogViewerActivity : AppCompatActivity() {
                 "$time  •  (서비스 생존 확인)"
             } else {
                 val cellInfo = if (e.cellId != null) {
-                    "  |  ${e.cellNetworkType ?: "-"} CellID:${e.cellId} LAC/TAC:${e.areaCode ?: "-"} PCI:${e.pci ?: "-"}"
+                    val staleTag = if (e.cellIsStale) " (직전 셀 정보)" else ""
+                    "  |  ${e.cellNetworkType ?: "-"} CellID:${e.cellId} LAC/TAC:${e.areaCode ?: "-"} PCI:${e.pci ?: "-"}$staleTag"
                 } else {
                     "  |  (셀 정보 획득 실패)"
                 }
