@@ -120,7 +120,17 @@ class LogViewerActivity : AppCompatActivity() {
                 val cellInfo = if (e.cellId != null) {
                     "  |  ${e.cellNetworkType ?: "-"} CellID:${e.cellId} LAC/TAC:${e.areaCode ?: "-"} PCI:${e.pci ?: "-"}"
                 } else ""
-                "$time  •  ${e.appPackage}\n     → ${e.domain}$cellInfo"
+
+                // 네트워크를 쓴 앱의 상태 태그 (FOREGROUND / BACKGROUND_... / UNKNOWN(원인))
+                val stateTag = e.importanceLabel?.let { " [$it]" } ?: ""
+
+                // 그 순간 화면에 떠 있던 앱 (권한 없거나 못 찾으면 표시 생략)
+                val fgLine = when {
+                    e.foregroundApp.isNullOrBlank() -> ""
+                    else -> "\n     (화면 앱: ${e.foregroundApp})"
+                }
+
+                "$time  •  ${e.appPackage}$stateTag\n     → ${e.domain}$cellInfo$fgLine"
             }
         }
     }
