@@ -212,8 +212,10 @@ class DnsVpnService : VpnService() {
         val now = System.currentTimeMillis()
 
         // 네트워크를 실제로 쓴 앱(UID)의 상태 + 그 순간 화면에 떠 있던 앱
-        val importanceLabel = AppStateResolver.resolveImportanceLabel(this, appUid, appPackage)
-        val foregroundApp = AppStateResolver.resolveForegroundAppLabel(this, now)
+        // 상태 판정은 "화면 앱 vs 통신 앱 비교"를 우선으로 한다 (importance는 폴백).
+        // UsageStats를 한 번만 조회하도록 상태/화면앱을 함께 구한다.
+        val (importanceLabel, foregroundApp) =
+            AppStateResolver.resolveStateAndForeground(this, appUid, appPackage, now)
 
         val entry = DnsLogEntry(
             timestamp = now,
