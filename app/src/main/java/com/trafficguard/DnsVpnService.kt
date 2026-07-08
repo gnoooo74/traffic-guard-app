@@ -145,13 +145,13 @@ class DnsVpnService : VpnService() {
             val queryName = DnsPacketUtils.extractQueryName(udp.payload) ?: continue
 
             // 어느 앱(UID)이 이 질의를 보냈는지 역추적
-            val appPackage = resolveOwnerPackage(udp.srcIp.hostAddress, udp.srcPort, udp.dstIp.hostAddress, 53)
+            val (appPackage, appUid) = resolveOwnerPackage(udp.srcIp.hostAddress, udp.srcPort, udp.dstIp.hostAddress, 53)
 
             // 실제 DNS 서버로 질의를 그대로 전달 (protect()로 VPN 루프 방지)
             val responsePayload = forwardDnsQuery(udp.payload, udp.dstIp)
 
-            // 로그 기록 (셀 정보 결합)
-            logDnsQuery(appPackage, queryName, udp.dstIp.hostAddress)
+            // 로그 기록 (셀 정보 + 앱 상태 결합)
+            logDnsQuery(appPackage, appUid, queryName, udp.dstIp.hostAddress)
 
             if (responsePayload != null) {
                 val responsePacket = DnsPacketUtils.buildResponsePacket(
@@ -190,9 +190,9 @@ class DnsVpnService : VpnService() {
         }
     }
 
-    /** API 29+에서 소켓 소유 UID -> 패키지명 역추적 */
-    private fun resolveOwnerPackage(srcIp: String, srcPort: Int, dstIp: String, dstPort: Int): String? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+    /** API 29+에서 소켓 소유 UID -> (패키지명, UID) 역추적 */
+    private fun resolveOwnerPackage(srcIp: String, srcPort: Int, dstIp: String, dstPort: Int): Pair<String?, Int> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return Pair(null, -1)
         return try {
             val cm = getSystemService(ConnectivityManager::class.java)
             val uid = cm.getConnectionOwnerUid(
@@ -200,18 +200,23 @@ class DnsVpnService : VpnService() {
                 InetSocketAddress(InetAddress.getByName(srcIp), srcPort),
                 InetSocketAddress(InetAddress.getByName(dstIp), dstPort)
             )
-            if (uid <= 0) return null
-            packageManager.getPackagesForUid(uid)?.firstOrNull()
+            if (uid <= 0) return Pair(null, -1)
+            Pair(packageManager.getPackagesForUid(uid)?.firstOrNull(), uid)
         } catch (e: Exception) {
-            null
+            Pair(null, -1)
         }
     }
 
-    private fun logDnsQuery(appPackage: String?, domain: String, dnsServerIp: String) {
+    private fun logDnsQuery(appPackage: String?, appUid: Int, domain: String, dnsServerIp: String) {
         val cell = cellInfoLogger.getRegisteredCell()
+        val now = System.currentTimeMillis()
+
+        // 네트워크를 실제로 쓴 앱(UID)의 상태 + 그 순간 화면에 떠 있던 앱
+        val importanceLabel = AppStateResolver.resolveImportanceLabel(this, appUid, appPackage)
+        val foregroundApp = AppStateResolver.resolveForegroundAppLabel(this, now)
 
         val entry = DnsLogEntry(
-            timestamp = System.currentTimeMillis(),
+            timestamp = now,
             appPackage = appPackage ?: "unknown",
             domain = domain,
             dnsServer = dnsServerIp,
@@ -221,7 +226,9 @@ class DnsVpnService : VpnService() {
             cellId = cell?.cellId,
             areaCode = cell?.areaCode,
             pci = cell?.pci,
-            signalDbm = cell?.signalDbm
+            signalDbm = cell?.signalDbm,
+            importanceLabel = importanceLabel,
+            foregroundApp = foregroundApp
         )
 
         persistEntry(entry)
@@ -259,8 +266,9 @@ class DnsVpnService : VpnService() {
             timeStr, entry.appPackage, entry.domain, entry.dnsServer,
             entry.cellNetworkType ?: "", entry.mcc ?: "", entry.mnc ?: "",
             entry.cellId?.toString() ?: "", entry.areaCode?.toString() ?: "",
-            entry.pci?.toString() ?: "", entry.signalDbm?.toString() ?: ""
-        ).joinToString(",")
+            entry.pci?.toString() ?: "", entry.signalDbm?.toString() ?: "",
+            entry.importanceLabel ?: "", entry.foregroundApp ?: ""
+        ).joinToString(",") { it.replace(",", " ") }
 
         FileLogWriter.appendLine(this, dateStr, csvLine)
     }
@@ -360,5 +368,7 @@ data class DnsLogEntry(
     val cellId: Long?,
     val areaCode: Int?,
     val pci: Int?,
-    val signalDbm: Int?
+    val signalDbm: Int?,
+    val importanceLabel: String? = null, // 네트워크를 쓴 앱의 상태 (FOREGROUND/BACKGROUND_...)
+    val foregroundApp: String? = null    // 그 순간 화면에 떠 있던 앱 이름 (UsageStats 기준)
 )
