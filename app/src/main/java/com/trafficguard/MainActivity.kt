@@ -1,9 +1,11 @@
 package com.trafficguard
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Button
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +35,10 @@ class MainActivity : ComponentActivity() {
             1001
         )
 
+        // 1-1) 사용 정보 접근 권한 안내 (선택) - 로그에 "화면에 떠 있던 앱"을 표시하기 위함.
+        //      권한이 없어도 포어/백그라운드 상태 태그 자체는 동작하므로 강제하지 않는다.
+        maybePromptUsageAccess()
+
         // 2) 정적 위험도 스캔 (필요 시 결과를 별도 화면에서 보여주도록 확장 가능)
         RiskScanner(this).scanAll()
 
@@ -55,5 +61,31 @@ class MainActivity : ComponentActivity() {
         } else {
             startService(Intent(this, DnsVpnService::class.java))
         }
+    }
+
+    /**
+     * "사용 정보 접근" 권한이 없으면, 한 번 안내 다이얼로그를 띄우고 설정 화면으로 보낸다.
+     * 이 권한이 있으면 로그에 "그 순간 화면에 떠 있던 앱"이 함께 기록되어,
+     * 백그라운드에서 몰래 통신한 앱을 더 정확히 구별할 수 있다.
+     */
+    private fun maybePromptUsageAccess() {
+        if (AppStateResolver.hasUsageAccess(this)) return
+
+        AlertDialog.Builder(this)
+            .setTitle("사용 정보 접근 권한 (선택)")
+            .setMessage(
+                "이 권한을 켜면, 로그에 '그 순간 화면에 떠 있던 앱'이 함께 기록됩니다.\n\n" +
+                "이를 통해 사용자가 보고 있던 앱과, 뒤에서 몰래 통신하는 앱을 더 정확히 구별할 수 있습니다.\n\n" +
+                "권한 없이도 포어/백그라운드 상태 표시는 동작합니다."
+            )
+            .setPositiveButton("설정 열기") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNegativeButton("나중에", null)
+            .show()
     }
 }
