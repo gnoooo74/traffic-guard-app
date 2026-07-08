@@ -147,43 +147,26 @@ object AppStateResolver {
         val foregroundLabel = foregroundPkg?.let { toAppLabel(context, it) }
 
         val state = when {
-            commPackage == null -> "UNKNOWN(NO_PACKAGE)"
+            commPackage == null -> "UNKNOWN(통신앱 확인불가)"
             foregroundPkg != null && foregroundPkg == commPackage -> "FOREGROUND"
             foregroundPkg != null -> "BACKGROUND"
-            // 화면 앱을 못 구함(권한 없음 등) -> importance 보조 판정
-            else -> resolveImportanceLabel(context, uid, commPackage)
+            // 화면 앱을 못 구함 -> 억지로 추측하지 않는다.
+            // importance 폴백에서 유효한 값(FG_SERVICE 등)이 나오면 살리고,
+            // 그마저 안 되면 "화면앱 확인불가"로 정직하게 둔다.
+            else -> importanceOrHonestUnknown(context, uid, commPackage)
         }
 
         return Pair(state, foregroundLabel)
     }
 
     /**
-     * 최종 상태 판정. 통신 앱(commPackage)이 그 순간 포어그라운드였는지 백그라운드였는지 결정한다.
-     *
-     * 판정 우선순위:
-     *  1) UsageStats로 얻은 "화면 앱"과 통신 앱을 비교 (가장 신뢰도 높음)
-     *     - 같으면 FOREGROUND, 다르면 BACKGROUND
-     *  2) 화면 앱을 못 구하면(권한 없음 등) importance 기반 보조 판정으로 폴백
-     *
-     * getRunningAppProcesses()의 importance는 다른 앱에 대해 대부분
-     * PROCESS_NOT_FOUND를 반환하므로 주 기준으로 쓰지 않고 폴백으로만 쓴다.
+     * importance 폴백. 단, 이 방식은 다른 앱에 대해 대부분 실패하므로,
+     * 실패 시에는 오해를 부르는 기술 용어(PROCESS_NOT_FOUND) 대신
+     * "화면앱 확인불가"로 정직하게 표기한다. (백그라운드를 포어그라운드로 추측하지 않음)
      */
-    fun resolveState(context: Context, uid: Int, commPackage: String?, nowMs: Long): String {
-        if (commPackage == null) return "UNKNOWN(NO_PACKAGE)"
-
-        val foregroundPkg = resolveForegroundPackage(context, nowMs)
-
-        if (foregroundPkg != null) {
-            // 화면 앱을 알아냈다 -> 통신 앱과 비교하는 게 가장 정확
-            return if (foregroundPkg == commPackage) {
-                "FOREGROUND"
-            } else {
-                "BACKGROUND"
-            }
-        }
-
-        // 화면 앱을 못 구한 경우(사용 정보 접근 권한 없음 등) -> importance 보조 판정
-        return resolveImportanceLabel(context, uid, commPackage)
+    private fun importanceOrHonestUnknown(context: Context, uid: Int, packageName: String): String {
+        val label = resolveImportanceLabel(context, uid, packageName)
+        return if (label.startsWith("UNKNOWN")) "UNKNOWN(화면앱 확인불가)" else label
     }
 
     fun toAppLabel(context: Context, packageName: String): String {
